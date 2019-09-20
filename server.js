@@ -11,6 +11,7 @@ const superagent = require('superagent');
 const pg = require('pg');
 require('dotenv').config();
 const PORT = process.env.PORT || 3000;
+const yelp = require('yelp-fusion');
 app.use(cors());
 
 const client = new pg.Client(process.env.DATABASE_URL);
@@ -30,6 +31,8 @@ client.connect()
 app.get('/location', routeLocation);
 app.get('/weather', getWeather);
 app.get('/events', getEvents);
+app.get('/movies', getMovies);
+app.get('/yelp', getYelp);
 app.use('*', wildcardRouter);
 
 /**
@@ -134,6 +137,65 @@ function Event(obj) {
   this.event_date = obj.start.local;
   this.summary = obj.summary;
 }
+
+function getMovies(request, response) {
+  const searchQuery = request.query.data;
+  console.log(searchQuery.search_query);
+  const url = `https://api.themoviedb.org/3/search/movie?api_key=${process.env.MOVIE_API_KEY}&language=en-US&page=1&query=${searchQuery.search_query}`;
+  superagent
+    .get(url)
+    .then(data => {
+      const movies = data.body.results.map(movieObj => new Movie(movieObj));
+      const sortedMovies = movies.sort((a, b) => b.popularity - a.popularity);
+      const topMovies = sortedMovies.splice(0, 20);
+      response.status(200).send(topMovies);
+    })
+    .catch(err => handleError(err, response));
+}
+
+function Movie(movieObj) {
+  this.title = movieObj.title;
+  this.overview = movieObj.overview;
+  this.average_votes = movieObj.vote_average;
+  this.total_votes = movieObj.vote_count;
+  this.image_url = `https://image.tmdb.org/t/p/w500${movieObj.poster_path}`;
+  this.popularity = movieObj.popularity;
+  this.released_on = movieObj.release_date;
+}
+
+function getYelp(request, response){
+  const searchQuery = request.query.data;
+  const apiKey = process.env.YELP_API_KEY;
+
+  const searchRequest = {
+    location: searchQuery.search_query
+  };
+
+  const client = yelp.client(apiKey);
+
+  client
+    .search(searchRequest)
+    .then(data => {
+      // const restraunts = response.jsonBody.businesses;
+      // console.log(restraunts);})
+      const restaurants = data.jsonBody.businesses.map(restaurantObj => new Restaurant(restaurantObj));
+      response.status(200).send(restaurants);
+    })
+    .catch(e => {
+      console.log(e);
+    });
+}
+
+function Restaurant(restaurantObj) {
+  this.name = restaurantObj.name;
+  this.image_url = restaurantObj.image_url;
+  this.price = restaurantObj.price;
+  this.rating = restaurantObj.rating;
+  this.url = restaurantObj.url;
+}
+
+
+
 
 function wildcardRouter(request, response) {
   response.status(500).send('Sorry, something went wrong');
