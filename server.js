@@ -1,5 +1,7 @@
 'use strict';
 
+require('dotenv').config();
+
 // Dependencies
 const express = require('express');
 const cors = require('cors');
@@ -8,12 +10,11 @@ const pg = require('pg');
 const yelp = require('yelp-fusion');
 
 const app = express();
-app.use(cors());
-require('dotenv').config();
-
 const PORT = process.env.PORT || 3000;
-const client = new pg.Client(process.env.DATABASE_URL);
 
+app.use(cors());
+
+const client = new pg.Client(process.env.DATABASE_URL);
 client.on('error', err => console.error(err));
 client
   .connect()
@@ -24,7 +25,7 @@ client
 
 
 // Routes
-app.get('/location', getLocation);
+app.get('/location', routeLocation);
 app.get('/weather', getWeather);
 app.get('/events', getEvents);
 app.get('/movies', getMovies);
@@ -33,45 +34,15 @@ app.get('/trails', getTrails);
 app.use('*', wildcardRouter);
 
 
+const getLocation = require('./location');
+
+
 // A function to retreive the searched location and render it on the page
-function getLocation(request, response) {
-  const searchQuery = request.query.data;
-  const sql = 'SELECT * FROM locations  WHERE search_query=$1;';
-  const value = [searchQuery];
-
-  client
-    .query(sql, value)
-    .then(result => result.rows[0] ? response.status(200).send(result.rows[0]) : newLocation(searchQuery, response))
+function routeLocation(request, response) {
+  getLocation(request.query.data, client, superagent)
+    .then(location => response.send(location))
     .catch(error => handleError(error, response));
 }
-
-function newLocation(searchQuery, response) {
-  const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${searchQuery}&key=${process.env.GEOCODE_API_KEY}`;
-
-  superagent
-    .get(url)
-    .then(result => {
-      const locationData = result.body.results[0];
-      const location = new Location(searchQuery, locationData);
-
-      const sql = 'INSERT INTO locations (search_query, formatted_query, latitude, longitude) VALUES ($1, $2, $3, $4);';
-      const value = [location.search_query, location.formatted_query, location.latitude, location.longitude];
-
-      client
-        .query(sql, value)
-        .then(response.status(200).send(location))
-        .catch(error => handleError(error, response));
-    })
-    .catch(error => handleError(error, response));
-}
-
-function Location(searchQuery, locationData) {
-  this.search_query = searchQuery;
-  this.formatted_query = locationData.formatted_address;
-  this.latitude = locationData.geometry.location.lat;
-  this.longitude = locationData.geometry.location.lng;
-}
-
 
 // A function to retreive weather information for the searched location and render it on the page
 function getWeather(request, response) {
